@@ -1,0 +1,36 @@
+# Файл: application.yml
+server:
+  port: 8080 # Стандартный порт для REST API
+
+spring:
+  # Настройки базы данных (PostgreSQL)
+  datasource:
+    url: jdbc:postgresql://localhost:5432/gym_db
+    username: anastasiia
+    password:
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init.mode: always
+  
+  # Настройки JPA/Hibernate
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    # Управление схемой БД (update, create, validate)
+    hibernate:
+      ddl-auto: update
+    defer-datasource-initialization: true
+  
+  # Настройки Spring Session с Redis
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      session:
+        timeout: 1800s # 30 минут
+
+  # Настройки AOP (необязательно, но полезно для явност
+  aop:
+    proxy-target-class: true
