@@ -184,3 +184,20 @@ Authentication is handled via **Redis Sessions**. After a successful `POST /logi
 3. **Error Handling**: Custom exceptions are centrally managed by `GlobalExceptionHandler`, ensuring predictable and standardized HTTP status responses.
 
 4. **Code Quality**: Adherence to SOLID principles, DTO validation via **Jakarta Validation**, and efficient object mapping using **MapStruct**.
+
+## Task
+### Spring Boot
+**1. Based on the codebase created during the previous module, implement follow functionality:**
+
+1) Convert existing application to be `Spring boot Application`.
+
+2) Enable `actuator`. 
+* Implement a few custom `health indicators`.
+* Implement a few custom metrics using `Prometheus`.
+3) Implement support for different environments (`local`, `dev`, `stg`, `prod`). Use Spring profiles.
+
+### Notes:
+1. Cover code with unit tests. Code should contain proper logging.
+2. Pay attention that each environment - different db properties.
+3. All functions except Create Trainer/Trainee profile. Should be executed only after Trainee/Trainer authentication (on this step should be checked
+username and password matching). 
