@@ -1,9 +1,8 @@
-# Файл: application.yml
 server:
-  port: 8080 # Стандартный порт для REST API
+  port: 8080 # Standard port for REST API
 
 spring:
-  # Настройки базы данных (PostgreSQL)
+  # Database settings (PostgreSQL)
   datasource:
     url: jdbc:postgresql://localhost:5432/gym_db
     username: anastasiia
@@ -12,25 +11,34 @@ spring:
   sql:
     init.mode: always
   
-  # Настройки JPA/Hibernate
+  # JPA/Hibernate settings
   jpa:
     show-sql: true
     properties:
       hibernate:
         format_sql: true
-    # Управление схемой БД (update, create, validate)
+    # DB schema management (update, create, validate)
     hibernate:
       ddl-auto: update
     defer-datasource-initialization: true
   
-  # Настройки Spring Session с Redis
+  # Spring Session settings with Redis
   data:
     redis:
       host: localhost
       port: 6379
       session:
-        timeout: 1800s # 30 минут
+        timeout: 1800s # 30 minutes
 
-  # Настройки AOP (необязательно, но полезно для явност
+  # AOP settings (optional, but good for explicitness)
   aop:
     proxy-target-class: true
+
+  management:
+    endpoints:
+      web:
+        exposure:
+          include: "*" # Expose all endpoints (health, info, metrics, prometheus, etc.)
+    endpoint:
+      health:
+        show-details: always # Show details for health checks

@@ -1,0 +1,16 @@
+spring:
+  profiles: local
+  datasource:
+    url: jdbc:h2:mem:gym_db_local
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop # Easy schema creation and drop on every run
+  sql:
+    init:
+      mode: always
+logging:
+  level:
+    com.company.gym: DEBUG

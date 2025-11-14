@@ -2,164 +2,152 @@ package com.company.gym.dao;
 
 import com.company.gym.entity.Trainee;
 import com.company.gym.entity.Training;
-import com.company.gym.util.HibernateUtil;
-import com.company.gym.util.QueryUtil;
-import org.hibernate.Session;
-import org.hibernate.Transaction;
-import org.hibernate.query.Query;
+import com.company.gym.entity.User;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 public class TraineeDAOTest {
 
-    private final String TEST_USERNAME = "traineeUser";
-    private final Long TEST_ID = 2L;
-
-    @Spy
     @InjectMocks
     private TraineeDAO traineeDAO;
 
     @Mock
-    private Session session;
+    private EntityManager entityManager;
+
     @Mock
-    private Trainee mockTrainee;
+    private TypedQuery<Trainee> traineeQuery;
+
     @Mock
-    private Training mockTraining;
-    @Mock
-    private Query<Trainee> traineeQuery;
-    @Mock
-    private Query<Training> trainingQuery;
-    @Mock
-    private Transaction transaction;
+    private TypedQuery<Training> trainingQuery;
+
+    private Trainee testTrainee;
+    private User testUser;
 
     @BeforeEach
     void setUp() {
-        lenient().when(mockTrainee.getId()).thenReturn(TEST_ID);
-        try (MockedStatic<HibernateUtil> mockedUtil = mockStatic(HibernateUtil.class)) {
-            mockedUtil.when(HibernateUtil::getSessionFactory).thenReturn(mock(org.hibernate.SessionFactory.class));
-            lenient().when(HibernateUtil.getSessionFactory().openSession()).thenReturn(session);
-            lenient().when(session.beginTransaction()).thenReturn(transaction);
-        }
-    }
+        ReflectionTestUtils.setField(traineeDAO, "entityManager", entityManager);
+        ReflectionTestUtils.setField(traineeDAO, GenericDAO.class, "entityManager", entityManager, EntityManager.class);
 
-    private MockedStatic<HibernateUtil> mockHibernateUtil() {
-        MockedStatic<HibernateUtil> mockedHibernateUtil = mockStatic(HibernateUtil.class);
-        mockedHibernateUtil.when(HibernateUtil::getSessionFactory).thenReturn(mock(org.hibernate.SessionFactory.class));
-        when(HibernateUtil.getSessionFactory().openSession()).thenReturn(session);
-        return mockedHibernateUtil;
-    }
+        testUser = new User();
+        testUser.setUsername("trainee.user");
 
-
-    @Test
-    void findByUsername_TraineeFound() {
-        when(session.createQuery(anyString(), eq(Trainee.class))).thenReturn(traineeQuery);
-        when(traineeQuery.setParameter("username", TEST_USERNAME)).thenReturn(traineeQuery);
-        when(traineeQuery.uniqueResult()).thenReturn(mockTrainee);
-
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            Trainee result = traineeDAO.findByUsername(TEST_USERNAME);
-
-            assertEquals(mockTrainee, result);
-            verify(session).close();
-        }
+        testTrainee = new Trainee();
+        testTrainee.setId(1L);
+        testTrainee.setUser(testUser);
     }
 
     @Test
-    void findByUsername_TraineeNotFound() {
-        when(session.createQuery(anyString(), eq(Trainee.class))).thenReturn(traineeQuery);
-        when(traineeQuery.setParameter("username", TEST_USERNAME)).thenReturn(traineeQuery);
-        when(traineeQuery.uniqueResult()).thenReturn(null);
+    void testFindByUsername_Found() {
+        when(entityManager.createQuery(anyString(), eq(Trainee.class))).thenReturn(traineeQuery);
+        when(traineeQuery.setParameter("username", "trainee.user")).thenReturn(traineeQuery);
+        when(traineeQuery.getResultList()).thenReturn(List.of(testTrainee));
 
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            Trainee result = traineeDAO.findByUsername(TEST_USERNAME);
+        Trainee found = traineeDAO.findByUsername("trainee.user");
 
-            assertNull(result);
-            verify(session).close();
-        }
+        assertNotNull(found);
+        assertEquals("trainee.user", found.getUser().getUsername());
+        ArgumentCaptor<String> hqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(entityManager).createQuery(hqlCaptor.capture(), eq(Trainee.class));
+        assertTrue(hqlCaptor.getValue().contains("WHERE u.username = :username"));
+        assertTrue(hqlCaptor.getValue().contains("Trainee t"));
     }
 
     @Test
-    void findByUsernameWithTrainers_TraineeFound() {
-        when(session.createQuery(anyString(), eq(Trainee.class))).thenReturn(traineeQuery);
-        when(traineeQuery.setParameter("username", TEST_USERNAME)).thenReturn(traineeQuery);
-        when(traineeQuery.uniqueResult()).thenReturn(mockTrainee);
+    void testFindByUsernameWithTrainers_Found() {
+        when(entityManager.createQuery(anyString(), eq(Trainee.class))).thenReturn(traineeQuery);
+        when(traineeQuery.setParameter("username", "trainee.user")).thenReturn(traineeQuery);
+        when(traineeQuery.getResultList()).thenReturn(List.of(testTrainee));
 
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            Trainee result = traineeDAO.findByUsernameWithTrainers(TEST_USERNAME);
+        Trainee found = traineeDAO.findByUsernameWithTrainers("trainee.user");
 
-            assertEquals(mockTrainee, result);
-            verify(session).close();
-        }
+        assertNotNull(found);
+        assertEquals("trainee.user", found.getUser().getUsername());
+        ArgumentCaptor<String> hqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(entityManager).createQuery(hqlCaptor.capture(), eq(Trainee.class));
+        assertTrue(hqlCaptor.getValue().contains("LEFT JOIN FETCH t.trainers"));
     }
 
     @Test
-    void delete_CallsSuperAndDelete() {
-        doNothing().when(traineeDAO).delete(mockTrainee);
+    void testDelete() {
+        when(entityManager.contains(testTrainee)).thenReturn(true);
+        doNothing().when(entityManager).remove(testTrainee);
 
-        traineeDAO.delete(mockTrainee);
+        traineeDAO.delete(testTrainee);
 
-        verify(traineeDAO).delete(mockTrainee);
+        verify(entityManager).remove(testTrainee);
     }
 
     @Test
-    void getTraineeTrainingsList_AllFiltersNull() {
-        List<Training> expectedList = Collections.singletonList(mockTraining);
-        when(trainingQuery.list()).thenReturn(expectedList);
-
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil();
-             MockedStatic<QueryUtil> mockedQueryUtil = mockStatic(QueryUtil.class)) {
-
-            mockedQueryUtil.when(() -> QueryUtil.getTrainingQuery(
-                            eq(TEST_USERNAME), isNull(), isNull(), eq(session), any(StringBuilder.class)))
-                    .thenReturn(trainingQuery);
-
-            List<Training> result = traineeDAO.getTraineeTrainingsList(TEST_USERNAME, null, null, null, null);
-
-            assertEquals(expectedList, result);
-            verify(session).close();
-        }
-    }
-
-    @Test
-    void getTraineeTrainingsList_WithAllFilters() {
-        Date fromDate = new Date();
-        Date toDate = new Date();
+    void testGetTraineeTrainingsList_AllFilters() {
+        String username = "trainee.user";
+        Date fromDate = new Date(1000);
+        Date toDate = new Date(2000);
         String trainerName = "John Doe";
-        String trainingTypeName = "Yoga";
+        String trainingTypeName = "Cardio";
 
-        List<Training> expectedList = Collections.singletonList(mockTraining);
-        when(trainingQuery.list()).thenReturn(expectedList);
-        when(trainingQuery.setParameter("trainerName", "%" + trainerName + "%")).thenReturn(trainingQuery);
-        when(trainingQuery.setParameter("trainingTypeName", trainingTypeName)).thenReturn(trainingQuery);
+        when(entityManager.createQuery(anyString(), eq(Training.class))).thenReturn(trainingQuery);
+        when(trainingQuery.setParameter(anyString(), any())).thenReturn(trainingQuery);
+        when(trainingQuery.getResultList()).thenReturn(List.of(new Training()));
 
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil();
-             MockedStatic<QueryUtil> mockedQueryUtil = mockStatic(QueryUtil.class)) {
+        List<Training> trainings = traineeDAO.getTraineeTrainingsList(username, fromDate, toDate, trainerName, trainingTypeName);
 
-            mockedQueryUtil.when(() -> QueryUtil.getTrainingQuery(
-                            eq(TEST_USERNAME), eq(fromDate), eq(toDate), eq(session), any(StringBuilder.class)))
-                    .thenReturn(trainingQuery);
+        assertFalse(trainings.isEmpty());
 
-            List<Training> result = traineeDAO.getTraineeTrainingsList(TEST_USERNAME, fromDate, toDate, trainerName, trainingTypeName);
+        ArgumentCaptor<String> hqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(entityManager).createQuery(hqlCaptor.capture(), eq(Training.class));
 
-            assertEquals(expectedList, result);
-            verify(trainingQuery).setParameter("trainerName", "%" + trainerName + "%");
-            verify(trainingQuery).setParameter("trainingTypeName", trainingTypeName);
-            verify(session).close();
-        }
+        String hql = hqlCaptor.getValue();
+        assertTrue(hql.contains("t.trainingDate >= :fromDate"));
+        assertTrue(hql.contains("t.trainingDate <= :toDate"));
+        assertTrue(hql.contains("CONCAT(tn.user.firstName, ' ', tn.user.lastName) LIKE :trainerName"));
+        assertTrue(hql.contains("tt.name = :trainingTypeName"));
+
+        verify(trainingQuery).setParameter(eq("username"), eq(username));
+        verify(trainingQuery).setParameter(eq("fromDate"), eq(fromDate));
+        verify(trainingQuery).setParameter(eq("toDate"), eq(toDate));
+        verify(trainingQuery).setParameter(eq("trainerName"), eq("%" + trainerName + "%"));
+        verify(trainingQuery).setParameter(eq("trainingTypeName"), eq(trainingTypeName));
+    }
+
+    @Test
+    void testGetTraineeTrainingsList_NoFilters() {
+        String username = "trainee.user";
+        when(entityManager.createQuery(anyString(), eq(Training.class))).thenReturn(trainingQuery);
+        when(trainingQuery.setParameter(anyString(), any())).thenReturn(trainingQuery);
+        when(trainingQuery.getResultList()).thenReturn(Collections.emptyList());
+
+        traineeDAO.getTraineeTrainingsList(username, null, null, null, null);
+
+        ArgumentCaptor<String> hqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(entityManager).createQuery(hqlCaptor.capture(), eq(Training.class));
+
+        String hql = hqlCaptor.getValue();
+        assertFalse(hql.contains("t.trainingDate"));
+        assertFalse(hql.contains("CONCAT"));
+        assertFalse(hql.contains("tt.name"));
+
+        verify(trainingQuery).setParameter(eq("username"), eq(username));
+        verify(trainingQuery, never()).setParameter(eq("fromDate"), any());
+        verify(trainingQuery, never()).setParameter(eq("trainerName"), anyString());
+        verify(trainingQuery, never()).setParameter(eq("trainingTypeName"), anyString());
     }
 }

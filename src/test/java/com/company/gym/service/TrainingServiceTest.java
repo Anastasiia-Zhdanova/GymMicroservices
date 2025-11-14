@@ -3,12 +3,17 @@ package com.company.gym.service;
 import com.company.gym.dao.TraineeDAO;
 import com.company.gym.dao.TrainerDAO;
 import com.company.gym.dao.TrainingDAO;
-import com.company.gym.entity.*;
+import com.company.gym.entity.Trainee;
+import com.company.gym.entity.Trainer;
+import com.company.gym.entity.Training;
+import com.company.gym.entity.TrainingType;
 import com.company.gym.exception.ValidationException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,84 +35,149 @@ public class TrainingServiceTest {
     @Mock
     private TrainerDAO trainerDAO;
 
-    @InjectMocks
+    private MeterRegistry meterRegistry;
     private TrainingService trainingService;
-
-    private Trainee mockTrainee;
-    private Trainer mockTrainer;
-    private TrainingType mockTrainingType;
-    private final String TRAINEE_USER = "trainee.one";
-    private final String TRAINER_USER = "trainer.one";
-    private final String TRAINING_NAME = "Circuit";
-    private final Date TRAINING_DATE = new Date();
-    private final Integer TRAINING_DURATION = 90;
 
     @BeforeEach
     void setUp() {
-        mockTrainingType = new TrainingType("Yoga");
-        mockTrainingType.setId(1L);
-
-        User trainerUser = new User();
-        trainerUser.setUsername(TRAINER_USER);
-        mockTrainer = new Trainer();
-        mockTrainer.setUser(trainerUser);
-        mockTrainer.setSpecialization(mockTrainingType);
-
-        User traineeUser = new User();
-        traineeUser.setUsername(TRAINEE_USER);
-        mockTrainee = new Trainee();
-        mockTrainee.setUser(traineeUser);
-
-        mockTrainee.setTrainers(new HashSet<>(Set.of(mockTrainer)));
+        meterRegistry = new SimpleMeterRegistry();
+        trainingService = new TrainingService(trainingDAO, traineeDAO, trainerDAO, meterRegistry);
     }
 
     @Test
-    void createTraining_Success() {
-        when(traineeDAO.findByUsernameWithTrainers(TRAINEE_USER)).thenReturn(mockTrainee);
-        when(trainerDAO.findByUsername(TRAINER_USER)).thenReturn(mockTrainer);
-        when(trainingDAO.save(any(Training.class))).thenReturn(new Training());
+    void testCreateTraining_Success() {
+        String traineeUsername = "trainee.user";
+        String trainerUsername = "trainer.user";
+        String trainingName = "Morning Workout";
+        Date trainingDate = new Date();
+        Integer trainingDuration = 60;
 
-        Training result = trainingService.createTraining(
-                TRAINEE_USER, TRAINER_USER, TRAINING_NAME, TRAINING_DATE, TRAINING_DURATION);
+        Trainee mockTrainee = mock(Trainee.class);
+        Trainer mockTrainer = mock(Trainer.class);
+        TrainingType mockSpecialization = mock(TrainingType.class);
+        Set<Trainer> trainerSet = new HashSet<>();
+        trainerSet.add(mockTrainer);
+
+        when(traineeDAO.findByUsernameWithTrainers(traineeUsername)).thenReturn(mockTrainee);
+        when(trainerDAO.findByUsername(trainerUsername)).thenReturn(mockTrainer);
+        when(mockTrainee.getTrainers()).thenReturn(trainerSet);
+        when(mockTrainer.getSpecialization()).thenReturn(mockSpecialization);
+
+        Training result = trainingService.createTraining(traineeUsername, trainerUsername, trainingName, trainingDate, trainingDuration);
 
         assertNotNull(result);
-        verify(trainingDAO, times(1)).save(any(Training.class));
-        assertEquals(mockTrainingType, result.getTrainingType());
+
+        ArgumentCaptor<Training> trainingCaptor = ArgumentCaptor.forClass(Training.class);
+        verify(trainingDAO).save(trainingCaptor.capture());
+
+        Training savedTraining = trainingCaptor.getValue();
+        assertEquals(mockTrainee, savedTraining.getTrainee());
+        assertEquals(mockTrainer, savedTraining.getTrainer());
+        assertEquals(trainingName, savedTraining.getTrainingName());
+        assertEquals(trainingDate, savedTraining.getTrainingDate());
+        assertEquals(trainingDuration, savedTraining.getTrainingDuration());
+        assertEquals(mockSpecialization, savedTraining.getTrainingType());
+
+        assertEquals(1, meterRegistry.get("app.training.creation.time").timer().count());
     }
 
     @Test
-    void createTraining_FailsOnMissingFields() {
-        assertThrows(ValidationException.class,
-                () -> trainingService.createTraining(TRAINEE_USER, TRAINER_USER, TRAINING_NAME, TRAINING_DATE, null));
+    void testCreateTraining_NullInputs_ThrowsValidationException() {
+        Date date = new Date();
+        String trainee = "trainee";
+        String trainer = "trainer";
+        String name = "name";
 
-        assertThrows(ValidationException.class,
-                () -> trainingService.createTraining(TRAINEE_USER, TRAINER_USER, TRAINING_NAME, TRAINING_DATE, 0));
+        ValidationException e1 = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining(null, trainer, name, date, 60));
+        assertTrue(e1.getMessage().contains("All fields"));
+
+        ValidationException e2 = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining(trainee, null, name, date, 60));
+        assertTrue(e2.getMessage().contains("All fields"));
+
+        ValidationException e3 = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining(trainee, trainer, null, date, 60));
+        assertTrue(e3.getMessage().contains("All fields"));
+
+        ValidationException e4 = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining(trainee, trainer, name, null, 60));
+        assertTrue(e4.getMessage().contains("All fields"));
+
+        ValidationException e5 = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining(trainee, trainer, name, date, null));
+        assertTrue(e5.getMessage().contains("All fields"));
+
+        verify(trainingDAO, never()).save(any());
+
+        assertEquals(5, meterRegistry.get("app.training.creation.time").timer().count());
     }
 
     @Test
-    void createTraining_FailsOnTraineeNotFound() {
-        when(traineeDAO.findByUsernameWithTrainers(TRAINEE_USER)).thenReturn(null);
+    void testCreateTraining_InvalidDuration_ThrowsValidationException() {
+        Date date = new Date();
 
-        assertThrows(ValidationException.class,
-                () -> trainingService.createTraining(TRAINEE_USER, TRAINER_USER, TRAINING_NAME, TRAINING_DATE, TRAINING_DURATION));
+        ValidationException e1 = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining("t", "tr", "n", date, 0));
+        assertTrue(e1.getMessage().contains("duration must be positive"));
+
+        ValidationException e2 = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining("t", "tr", "n", date, -10));
+        assertTrue(e2.getMessage().contains("duration must be positive"));
+
+        verify(trainingDAO, never()).save(any());
+
+        assertEquals(2, meterRegistry.get("app.training.creation.time").timer().count());
     }
 
     @Test
-    void createTraining_FailsOnTrainerNotFound() {
-        when(traineeDAO.findByUsernameWithTrainers(TRAINEE_USER)).thenReturn(mockTrainee);
-        when(trainerDAO.findByUsername(TRAINER_USER)).thenReturn(null);
+    void testCreateTraining_TraineeNotFound_ThrowsValidationException() {
+        String traineeUsername = "unknown.trainee";
+        when(traineeDAO.findByUsernameWithTrainers(traineeUsername)).thenReturn(null);
 
-        assertThrows(ValidationException.class,
-                () -> trainingService.createTraining(TRAINEE_USER, TRAINER_USER, TRAINING_NAME, TRAINING_DATE, TRAINING_DURATION));
+        ValidationException e = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining(traineeUsername, "trainer", "name", new Date(), 60));
+
+        assertEquals("Trainee not found with username: " + traineeUsername, e.getMessage());
+        verify(trainingDAO, never()).save(any());
+        assertEquals(1, meterRegistry.get("app.training.creation.time").timer().count());
     }
 
     @Test
-    void createTraining_FailsOnTrainerNotAssociated() {
-        mockTrainee.setTrainers(new HashSet<>());
-        when(traineeDAO.findByUsernameWithTrainers(TRAINEE_USER)).thenReturn(mockTrainee);
-        when(trainerDAO.findByUsername(TRAINER_USER)).thenReturn(mockTrainer);
+    void testCreateTraining_TrainerNotFound_ThrowsValidationException() {
+        String traineeUsername = "trainee.user";
+        String trainerUsername = "unknown.trainer";
+        Trainee mockTrainee = mock(Trainee.class);
 
-        assertThrows(ValidationException.class,
-                () -> trainingService.createTraining(TRAINEE_USER, TRAINER_USER, TRAINING_NAME, TRAINING_DATE, TRAINING_DURATION));
+        when(traineeDAO.findByUsernameWithTrainers(traineeUsername)).thenReturn(mockTrainee);
+        when(trainerDAO.findByUsername(trainerUsername)).thenReturn(null);
+
+        ValidationException e = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining(traineeUsername, trainerUsername, "name", new Date(), 60));
+
+        assertEquals("Trainer not found with username: " + trainerUsername, e.getMessage());
+        verify(trainingDAO, never()).save(any());
+        assertEquals(1, meterRegistry.get("app.training.creation.time").timer().count());
+    }
+
+    @Test
+    void testCreateTraining_TrainerNotAssociatedWithTrainee_ThrowsValidationException() {
+        String traineeUsername = "trainee.user";
+        String trainerUsername = "trainer.user";
+
+        Trainee mockTrainee = mock(Trainee.class);
+        Trainer mockTrainer = mock(Trainer.class);
+
+        when(mockTrainee.getTrainers()).thenReturn(new HashSet<>());
+
+        when(traineeDAO.findByUsernameWithTrainers(traineeUsername)).thenReturn(mockTrainee);
+        when(trainerDAO.findByUsername(trainerUsername)).thenReturn(mockTrainer);
+
+        ValidationException e = assertThrows(ValidationException.class, () ->
+                trainingService.createTraining(traineeUsername, trainerUsername, "name", new Date(), 60));
+
+        assertEquals("Trainer '" + trainerUsername + "' is not associated with Trainee '" + traineeUsername + "'.", e.getMessage());
+        verify(trainingDAO, never()).save(any());
+        assertEquals(1, meterRegistry.get("app.training.creation.time").timer().count());
     }
 }

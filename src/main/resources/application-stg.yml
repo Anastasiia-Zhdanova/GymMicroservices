@@ -1,0 +1,18 @@
+spring:
+  profiles: stg
+  # Database settings (PostgreSQL) for Staging
+  datasource:
+    url: jdbc:postgresql://stg-db-server:5432/gym_db_stg # Staging server address
+    username: stg_user
+    password: ${STG_DB_PASSWORD} # Password from environment variable
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate # Only schema validation (no automatic changes)
+  sql:
+    init:
+      mode: never # Do not run data.sql automatically in Staging/Prod
+
+logging:
+  level:
+    com.company.gym: INFO # INFO level for cleaner logs

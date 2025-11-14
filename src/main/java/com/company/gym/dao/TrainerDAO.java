@@ -2,10 +2,9 @@ package com.company.gym.dao;
 
 import com.company.gym.entity.Trainer;
 import com.company.gym.entity.Training;
-import com.company.gym.util.HibernateUtil;
-import com.company.gym.util.QueryUtil;
-import org.hibernate.Session;
-import org.hibernate.query.Query;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.TypedQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -18,6 +17,9 @@ public class TrainerDAO extends GenericDAO<Trainer, Long> {
 
     private static final Logger logger = LoggerFactory.getLogger(TrainerDAO.class);
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     public TrainerDAO() {
         super(Trainer.class);
     }
@@ -28,11 +30,13 @@ public class TrainerDAO extends GenericDAO<Trainer, Long> {
     }
 
     public Trainer findByUsername(String username) {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            Query<Trainer> query = session.createQuery(
+        try {
+            TypedQuery<Trainer> query = entityManager.createQuery(
                     "SELECT t FROM Trainer t JOIN FETCH t.user u WHERE u.username = :username", Trainer.class);
             query.setParameter("username", username);
-            Trainer trainer = query.uniqueResult();
+
+            List<Trainer> results = query.getResultList();
+            Trainer trainer = results.isEmpty() ? null : results.get(0);
 
             if (trainer == null) {
                 logger.warn("Trainer not found with username: {}", username);
@@ -40,19 +44,24 @@ public class TrainerDAO extends GenericDAO<Trainer, Long> {
                 logger.debug("Found Trainer with username: {}", username);
             }
             return trainer;
+        } catch (Exception e) {
+            logger.error("Error finding Trainer by username: {}", username, e);
+            return null;
         }
     }
 
     public Trainer findByUserNameWithTrainees(String username) {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            Query<Trainer> query = session.createQuery(
+        try {
+            TypedQuery<Trainer> query = entityManager.createQuery(
                     "SELECT DISTINCT t FROM Trainer t " +
-                    "JOIN FETCH t.user u " +
-                    "LEFT JOIN FETCH t.trainees tr " +
-                    "LEFT JOIN FETCH tr.user " +
-                    "WHERE u.username = :username", Trainer.class);
+                            "JOIN FETCH t.user u " +
+                            "LEFT JOIN FETCH t.trainees tr " +
+                            "LEFT JOIN FETCH tr.user " +
+                            "WHERE u.username = :username", Trainer.class);
             query.setParameter("username", username);
-            Trainer trainer = query.uniqueResult();
+
+            List<Trainer> results = query.getResultList();
+            Trainer trainer = results.isEmpty() ? null : results.get(0);
 
             if (trainer == null) {
                 logger.warn("Trainer not found with username: {}", username);
@@ -60,38 +69,49 @@ public class TrainerDAO extends GenericDAO<Trainer, Long> {
                 logger.debug("Found Trainer with username: {}", username);
             }
             return trainer;
+        } catch (Exception e) {
+            logger.error("Error finding Trainer by username with trainees: {}", username, e);
+            return null;
         }
     }
 
     public List<Training> getTrainerTrainingsList(String username, Date fromDate, Date toDate) {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            StringBuilder hql = new StringBuilder(
-                    "SELECT t FROM Training t JOIN t.trainer tr JOIN FETCH t.trainee tre JOIN tr.user u WHERE u.username = :username"
-            );
+        StringBuilder hql = new StringBuilder(
+                "SELECT t FROM Training t JOIN t.trainer tr JOIN FETCH t.trainee tre JOIN tr.user u WHERE u.username = :username"
+        );
 
-            if (fromDate != null) {
-                hql.append(" AND t.trainingDate >= :fromDate");
-            }
-            if (toDate != null) {
-                hql.append(" AND t.trainingDate <= :toDate");
-            }
-
-            Query<Training> query = QueryUtil.getTrainingQuery(username,fromDate,toDate,session,hql);
-
-            List<Training> trainings = query.getResultList();
-            logger.info("Retrieved {} trainings for trainer: {}", trainings.size(), username);
-            return trainings;
+        if (fromDate != null) {
+            hql.append(" AND t.trainingDate >= :fromDate");
         }
+        if (toDate != null) {
+            hql.append(" AND t.trainingDate <= :toDate");
+        }
+
+        TypedQuery<Training> query = entityManager.createQuery(hql.toString(), Training.class);
+
+        query.setParameter("username", username);
+        if (fromDate != null) {
+            query.setParameter("fromDate", fromDate);
+        }
+        if (toDate != null) {
+            query.setParameter("toDate", toDate);
+        }
+
+        List<Training> trainings = query.getResultList();
+        logger.info("Retrieved {} trainings for trainer: {}", trainings.size(), username);
+        return trainings;
     }
 
     public List<Trainer> findUnassignedTrainers(String traineeUsername) {
         logger.debug("Finding all active Trainers not assigned to Trainee: {}", traineeUsername);
 
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+        try {
             String findTraineeIdHQL = "SELECT t.id FROM Trainee t JOIN t.user u WHERE u.username = :username";
-            Query<Long> traineeIdQuery = session.createQuery(findTraineeIdHQL, Long.class);
+            TypedQuery<Long> traineeIdQuery = entityManager.createQuery(findTraineeIdHQL, Long.class);
             traineeIdQuery.setParameter("username", traineeUsername);
-            Long traineeId = traineeIdQuery.uniqueResult();
+
+            List<Long> idResults = traineeIdQuery.getResultList();
+            Long traineeId = idResults.isEmpty() ? null : idResults.get(0);
 
             if (traineeId == null) {
                 logger.warn("Trainee with username {} not found. Returning empty list.", traineeUsername);
@@ -102,7 +122,7 @@ public class TrainerDAO extends GenericDAO<Trainer, Long> {
                     "    SELECT tr.id FROM Trainee trainee JOIN trainee.trainers tr WHERE trainee.id = :traineeId" +
                     ") AND t.user.isActive = true";
 
-            Query<Trainer> query = session.createQuery(hql, Trainer.class);
+            TypedQuery<Trainer> query = entityManager.createQuery(hql, Trainer.class);
             query.setParameter("traineeId", traineeId);
 
             List<Trainer> unassignedTrainers = query.getResultList();

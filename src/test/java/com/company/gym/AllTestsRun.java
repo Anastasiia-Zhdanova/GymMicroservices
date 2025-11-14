@@ -44,7 +44,6 @@ import org.junit.platform.suite.api.Suite;
         UserTest.class,
         TraineeMapperTest.class,
         TrainerMapperTest.class,
-        HibernateUtilTest.class,
         PasswordUtilTest.class,
         QueryUtilTest.class,
         UserCredentialGeneratorTest.class,
@@ -63,7 +62,9 @@ import org.junit.platform.suite.api.Suite;
         UserCredentialsResponseTest.class,
         WebSecurityConfigTest.class,
         CustomUsernamePasswordAuthenticationFilterTest.class,
-        LoggingAspectTest.class
+        LoggingAspectTest.class,
+        RedisSessionHealthIndicatorTest.class,
+        TrainingTypeInitialLoadHealthIndicatorTest.class
 })
 public class AllTestsRun {
 

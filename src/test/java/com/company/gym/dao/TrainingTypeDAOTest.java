@@ -1,90 +1,92 @@
 package com.company.gym.dao;
 
 import com.company.gym.entity.TrainingType;
-import com.company.gym.util.HibernateUtil;
-import org.hibernate.Session;
-import org.hibernate.SessionFactory;
-import org.hibernate.query.Query;
-import org.junit.jupiter.api.AfterEach;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class TrainingTypeDAOTest {
-
-    @Mock
-    private Session session;
-    @Mock
-    private SessionFactory sessionFactory;
-    @Mock
-    private Query<TrainingType> query;
 
     @InjectMocks
     private TrainingTypeDAO trainingTypeDAO;
 
-    private MockedStatic<HibernateUtil> mockedHibernateUtil;
-    private final String TYPE_NAME = "Yoga";
-    private TrainingType mockType;
+    @Mock
+    private EntityManager entityManager;
+
+    @Mock
+    private TypedQuery<TrainingType> typedQuery;
+
+    private TrainingType testTrainingType;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-        mockType = new TrainingType(TYPE_NAME);
+        ReflectionTestUtils.setField(trainingTypeDAO, "entityManager", entityManager);
+        ReflectionTestUtils.setField(trainingTypeDAO, GenericDAO.class, "entityManager", entityManager, EntityManager.class);
 
-        mockedHibernateUtil = Mockito.mockStatic(HibernateUtil.class);
-        mockedHibernateUtil.when(HibernateUtil::getSessionFactory).thenReturn(sessionFactory);
-        when(sessionFactory.openSession()).thenReturn(session);
-    }
-
-    @AfterEach
-    void tearDown() {
-        mockedHibernateUtil.close();
+        testTrainingType = new TrainingType("Cardio");
+        testTrainingType.setId(1L);
     }
 
     @Test
-    void findByName_Found() {
-        when(session.createQuery(anyString(), Mockito.eq(TrainingType.class))).thenReturn(query);
-        when(query.setParameter(anyString(), any())).thenReturn(query);
-        when(query.uniqueResult()).thenReturn(mockType);
-
-        TrainingType result = trainingTypeDAO.findByName(TYPE_NAME);
-
-        assertNotNull(result);
-        assertEquals(TYPE_NAME, result.getName());
-        verify(query).setParameter("name", TYPE_NAME);
-        verify(session).close();
+    void testGetEntityId() {
+        assertEquals(1L, trainingTypeDAO.getEntityId(testTrainingType));
     }
 
     @Test
-    void findByName_NotFound() {
-        when(session.createQuery(anyString(), Mockito.eq(TrainingType.class))).thenReturn(query);
-        when(query.setParameter(anyString(), any())).thenReturn(query);
-        when(query.uniqueResult()).thenReturn(null);
+    void testFindByName_Found() {
+        when(entityManager.createQuery(anyString(), eq(TrainingType.class))).thenReturn(typedQuery);
+        when(typedQuery.setParameter("name", "Cardio")).thenReturn(typedQuery);
+        when(typedQuery.getResultList()).thenReturn(List.of(testTrainingType));
 
-        TrainingType result = trainingTypeDAO.findByName(TYPE_NAME);
+        TrainingType foundType = trainingTypeDAO.findByName("Cardio");
 
-        assertNull(result);
-        verify(session).close();
+        assertNotNull(foundType);
+        assertEquals("Cardio", foundType.getName());
     }
 
     @Test
-    void findAll_Success() {
-        List<TrainingType> expectedList = List.of(mockType);
-        when(session.createQuery(anyString(), Mockito.eq(TrainingType.class))).thenReturn(query);
-        when(query.getResultList()).thenReturn(expectedList);
+    void testFindByName_NotFound() {
+        when(entityManager.createQuery(anyString(), eq(TrainingType.class))).thenReturn(typedQuery);
+        when(typedQuery.setParameter("name", "Unknown")).thenReturn(typedQuery);
+        when(typedQuery.getResultList()).thenReturn(Collections.emptyList());
 
-        List<TrainingType> result = trainingTypeDAO.findAll();
+        TrainingType foundType = trainingTypeDAO.findByName("Unknown");
 
-        assertFalse(result.isEmpty());
-        assertEquals(1, result.size());
-        verify(session).close();
+        assertNull(foundType);
+    }
+
+    @Test
+    void testFindByName_Exception() {
+        when(entityManager.createQuery(anyString(), eq(TrainingType.class))).thenThrow(new RuntimeException("DB error"));
+
+        TrainingType foundType = trainingTypeDAO.findByName("Cardio");
+
+        assertNull(foundType);
+    }
+
+    @Test
+    void testFindAll_Overridden() {
+        when(entityManager.createQuery("FROM TrainingType t ORDER BY t.name", TrainingType.class)).thenReturn(typedQuery);
+        when(typedQuery.getResultList()).thenReturn(List.of(testTrainingType));
+
+        List<TrainingType> types = trainingTypeDAO.findAll();
+
+        assertNotNull(types);
+        assertEquals(1, types.size());
     }
 }

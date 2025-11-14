@@ -1,219 +1,107 @@
 package com.company.gym.dao;
 
-import com.company.gym.util.HibernateUtil;
-import org.hibernate.Session;
-import org.hibernate.Transaction;
-import org.hibernate.query.Query;
+import com.company.gym.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.MockedStatic;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.context.annotation.Import;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.io.Serializable;
-import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
 
-class TestEntity implements Serializable {
-    private Long id;
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-}
-
-@ExtendWith(MockitoExtension.class)
+@DataJpaTest
+@Import(UserDAO.class)
 public class GenericDAOTest {
 
-    @Mock
-    private Session session;
-    @Mock
-    private Transaction transaction;
-    @Mock
-    private Query<TestEntity> query;
+    @Autowired
+    private TestEntityManager entityManager;
 
-    private TestGenericDAO dao;
-    private TestEntity testEntity;
-    private final Long testId = 1L;
+    @Autowired
+    private UserDAO userDAO;
 
-    private static class TestGenericDAO extends GenericDAO<TestEntity, Long> {
-        public TestGenericDAO(Class<TestEntity> entityClass) {
-            super(entityClass);
-        }
-        @Override
-        protected Long getEntityId(TestEntity entity) {
-            return entity.getId();
-        }
-    }
+    private User testUser;
+    private Long testId;
 
     @BeforeEach
     void setUp() {
-        dao = new TestGenericDAO(TestEntity.class);
-        testEntity = new TestEntity();
-        testEntity.setId(testId);
-
-        lenient().when(session.beginTransaction()).thenReturn(transaction);
-        lenient().when(session.merge(any(TestEntity.class))).thenReturn(testEntity);
-    }
-
-    private MockedStatic<HibernateUtil> mockHibernateUtil() {
-        MockedStatic<HibernateUtil> mockedHibernateUtil = mockStatic(HibernateUtil.class);
-        mockedHibernateUtil.when(HibernateUtil::getSessionFactory).thenReturn(mock(org.hibernate.SessionFactory.class));
-        when(HibernateUtil.getSessionFactory().openSession()).thenReturn(session);
-        return mockedHibernateUtil;
+        testUser = new User();
+        testUser.setFirstName("Generic");
+        testUser.setLastName("Test");
+        testUser.setUsername("generic.test");
+        testUser.setPassword("pass");
+        testUser.setIsActive(true);
     }
 
     @Test
+    @Transactional
     void save_Success() {
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            TestEntity result = dao.save(testEntity);
+        User savedUser = userDAO.save(testUser);
 
-            verify(session).beginTransaction();
-            verify(session).persist(testEntity);
-            verify(transaction).commit();
-            verify(session).close();
-            assertEquals(testEntity, result);
-        }
+        assertNotNull(savedUser.getId());
+        assertEquals(testUser.getUsername(), savedUser.getUsername());
+
+        User foundUser = entityManager.find(User.class, savedUser.getId());
+        assertEquals(savedUser.getUsername(), foundUser.getUsername());
     }
 
     @Test
-    void save_RollbackOnException() {
-        doThrow(new RuntimeException("DB error")).when(session).persist(any());
-
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            RuntimeException exception = assertThrows(RuntimeException.class, () -> dao.save(testEntity));
-            assertTrue(exception.getMessage().contains("Could not save"));
-
-            verify(session).beginTransaction();
-            verify(transaction).rollback();
-            verify(session).close();
-        }
-    }
-
-    @Test
+    @Transactional
     void update_Success() {
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            TestEntity result = dao.update(testEntity);
+        User savedUser = entityManager.persistFlushFind(testUser);
+        savedUser.setFirstName("UpdatedName");
 
-            verify(session).beginTransaction();
-            verify(session).merge(testEntity);
-            verify(transaction).commit();
-            verify(session).close();
-            assertEquals(testEntity, result);
-        }
+        User updatedUser = userDAO.update(savedUser);
+
+        assertEquals("UpdatedName", updatedUser.getFirstName());
     }
 
     @Test
-    void update_RollbackOnException() {
-        when(session.merge(any())).thenThrow(new RuntimeException("DB error"));
+    @Transactional
+    void delete_Success() {
+        User savedUser = entityManager.persistFlushFind(testUser);
+        testId = savedUser.getId();
 
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            RuntimeException exception = assertThrows(RuntimeException.class, () -> dao.update(testEntity));
-            assertTrue(exception.getMessage().contains("Could not update"));
+        assertNotNull(entityManager.find(User.class, testId));
 
-            verify(session).beginTransaction();
-            verify(transaction).rollback();
-            verify(session).close();
-        }
-    }
+        userDAO.delete(savedUser);
 
-    @Test
-    void delete_Success_NotContained() {
-        when(session.contains(testEntity)).thenReturn(false);
-
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            dao.delete(testEntity);
-
-            verify(session).beginTransaction();
-            verify(session).merge(testEntity);
-            verify(session).remove(testEntity);
-            verify(transaction).commit();
-            verify(session).close();
-        }
-    }
-
-    @Test
-    void delete_Success_Contained() {
-        when(session.contains(testEntity)).thenReturn(true);
-
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            dao.delete(testEntity);
-
-            verify(session).beginTransaction();
-            verify(session, never()).merge(any());
-            verify(session).remove(testEntity);
-            verify(transaction).commit();
-            verify(session).close();
-        }
-    }
-
-    @Test
-    void delete_RollbackOnException() {
-        when(session.contains(any())).thenThrow(new RuntimeException("DB error"));
-
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            RuntimeException exception = assertThrows(RuntimeException.class, () -> dao.delete(testEntity));
-            assertTrue(exception.getMessage().contains("Could not delete"));
-
-            verify(session).beginTransaction();
-            verify(transaction).rollback();
-            verify(session).close();
-        }
+        assertNull(entityManager.find(User.class, testId));
     }
 
     @Test
     void findById_Found() {
-        when(session.find(TestEntity.class, testId)).thenReturn(testEntity);
+        User savedUser = entityManager.persistFlushFind(testUser);
+        testId = savedUser.getId();
 
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            TestEntity result = dao.findById(testId);
+        User foundUser = userDAO.findById(testId);
 
-            assertEquals(testEntity, result);
-            verify(session).close();
-        }
+        assertEquals(testUser.getUsername(), foundUser.getUsername());
     }
 
     @Test
     void findById_NotFound() {
-        when(session.find(TestEntity.class, testId)).thenReturn(null);
-
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            TestEntity result = dao.findById(testId);
-
-            assertNull(result);
-            verify(session).close();
-        }
+        User foundUser = userDAO.findById(999L);
+        assertNull(foundUser);
     }
 
     @Test
     void findAll_ReturnsList() {
-        List<TestEntity> expectedList = Collections.singletonList(testEntity);
-        when(session.createQuery(anyString(), eq(TestEntity.class))).thenReturn(query);
-        when(query.list()).thenReturn(expectedList);
+        entityManager.persist(testUser);
 
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            List<TestEntity> result = dao.findAll();
+        User user2 = new User();
+        user2.setFirstName("User");
+        user2.setLastName("Two");
+        user2.setUsername("user.two");
+        user2.setPassword("p");
+        user2.setIsActive(true);
+        entityManager.persist(user2);
 
-            assertEquals(expectedList, result);
-            verify(session).close();
-        }
-    }
+        List<User> users = userDAO.findAll();
 
-    @Test
-    void findAll_ReturnsEmptyList() {
-        List<TestEntity> expectedList = Collections.emptyList();
-        when(session.createQuery(anyString(), eq(TestEntity.class))).thenReturn(query);
-        when(query.list()).thenReturn(expectedList);
-
-        try (MockedStatic<HibernateUtil> mockedUtil = mockHibernateUtil()) {
-            List<TestEntity> result = dao.findAll();
-
-            assertEquals(expectedList, result);
-            verify(session).close();
-        }
+        assertEquals(2, users.size());
     }
 }

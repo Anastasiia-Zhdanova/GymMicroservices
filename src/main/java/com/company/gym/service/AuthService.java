@@ -10,15 +10,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 
 @Service
 public class AuthService {
     private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
 
     private final UserDAO userDAO;
-
-    public AuthService(UserDAO userDAO) {
+    private final Counter registrationCounter;
+    public AuthService(UserDAO userDAO, MeterRegistry registry) {
         this.userDAO = userDAO;
+        this.registrationCounter = Counter.builder("app.user.registration.total").description("Total number of user registrations").register(registry);
     }
 
     @Transactional
@@ -40,6 +43,9 @@ public class AuthService {
         user.setIsActive(true);
 
         logger.info("Assigned username: {}", user.getUsername());
+
+        registrationCounter.increment();
+
         return plainPassword;
     }
 

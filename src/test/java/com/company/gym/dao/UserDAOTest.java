@@ -1,76 +1,162 @@
 package com.company.gym.dao;
 
 import com.company.gym.entity.User;
-import com.company.gym.util.HibernateUtil;
-import org.hibernate.Session;
-import org.hibernate.SessionFactory;
-import org.hibernate.query.Query;
-import org.junit.jupiter.api.AfterEach;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 public class UserDAOTest {
-
-    @Mock
-    private Session session;
-    @Mock
-    private SessionFactory sessionFactory;
-    @Mock
-    private Query<User> query;
 
     @InjectMocks
     private UserDAO userDAO;
 
-    private MockedStatic<HibernateUtil> mockedHibernateUtil;
-    private final String USERNAME = "test.user";
-    private User mockUser;
+    @Mock
+    private EntityManager entityManager;
+
+    @Mock
+    private TypedQuery<User> typedQuery;
+
+    private User testUser;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-        mockUser = new User();
-        mockUser.setUsername(USERNAME);
+        ReflectionTestUtils.setField(userDAO, "entityManager", entityManager);
+        ReflectionTestUtils.setField(userDAO, GenericDAO.class, "entityManager", entityManager, EntityManager.class);
 
-        mockedHibernateUtil = Mockito.mockStatic(HibernateUtil.class);
-        mockedHibernateUtil.when(HibernateUtil::getSessionFactory).thenReturn(sessionFactory);
-        when(sessionFactory.openSession()).thenReturn(session);
-    }
-
-    @AfterEach
-    void tearDown() {
-        mockedHibernateUtil.close();
+        testUser = new User();
+        testUser.setId(1L);
+        testUser.setUsername("test.user");
     }
 
     @Test
-    void findByUsername_Found() {
-        when(session.createQuery(anyString(), Mockito.eq(User.class))).thenReturn(query);
-        when(query.setParameter(anyString(), any())).thenReturn(query);
-        when(query.uniqueResult()).thenReturn(mockUser);
-
-        User result = userDAO.findByUsername(USERNAME);
-
-        assertNotNull(result);
-        assertEquals(USERNAME, result.getUsername());
-        verify(query).setParameter("username", USERNAME);
-        verify(session).close();
+    void testGetEntityId() {
+        assertEquals(1L, userDAO.getEntityId(testUser));
     }
 
     @Test
-    void findByUsername_NotFound() {
-        when(session.createQuery(anyString(), Mockito.eq(User.class))).thenReturn(query);
-        when(query.setParameter(anyString(), any())).thenReturn(query);
-        when(query.uniqueResult()).thenReturn(null);
+    void testFindByUsername_UserFound() {
+        when(entityManager.createQuery(anyString(), eq(User.class))).thenReturn(typedQuery);
+        when(typedQuery.setParameter("username", "test.user")).thenReturn(typedQuery);
+        when(typedQuery.getResultList()).thenReturn(List.of(testUser));
 
-        User result = userDAO.findByUsername(USERNAME);
+        User foundUser = userDAO.findByUsername("test.user");
 
-        assertNull(result);
-        verify(session).close();
+        assertNotNull(foundUser);
+        assertEquals("test.user", foundUser.getUsername());
+        verify(typedQuery).setParameter("username", "test.user");
+    }
+
+    @Test
+    void testFindByUsername_UserNotFound() {
+        when(entityManager.createQuery(anyString(), eq(User.class))).thenReturn(typedQuery);
+        when(typedQuery.setParameter("username", "unknown")).thenReturn(typedQuery);
+        when(typedQuery.getResultList()).thenReturn(Collections.emptyList());
+
+        User foundUser = userDAO.findByUsername("unknown");
+
+        assertNull(foundUser);
+    }
+
+    @Test
+    void testFindByUsername_Exception() {
+        when(entityManager.createQuery(anyString(), eq(User.class))).thenThrow(new RuntimeException("DB error"));
+
+        User foundUser = userDAO.findByUsername("test.user");
+
+        assertNull(foundUser);
+    }
+
+    @Test
+    void testSave_Success() {
+        doNothing().when(entityManager).persist(testUser);
+
+        User savedUser = userDAO.save(testUser);
+
+        assertNotNull(savedUser);
+        verify(entityManager).persist(testUser);
+    }
+
+    @Test
+    void testSave_Exception() {
+        doThrow(new RuntimeException("Persist error")).when(entityManager).persist(testUser);
+
+        assertThrows(RuntimeException.class, () -> userDAO.save(testUser));
+    }
+
+    @Test
+    void testUpdate() {
+        when(entityManager.merge(testUser)).thenReturn(testUser);
+
+        User updatedUser = userDAO.update(testUser);
+
+        assertNotNull(updatedUser);
+        verify(entityManager).merge(testUser);
+    }
+
+    @Test
+    void testDelete() {
+        when(entityManager.contains(testUser)).thenReturn(true);
+        doNothing().when(entityManager).remove(testUser);
+
+        userDAO.delete(testUser);
+
+        verify(entityManager).remove(testUser);
+    }
+
+    @Test
+    void testDelete_NotInContext() {
+        when(entityManager.contains(testUser)).thenReturn(false);
+        when(entityManager.merge(testUser)).thenReturn(testUser);
+        doNothing().when(entityManager).remove(testUser);
+
+        userDAO.delete(testUser);
+
+        verify(entityManager).merge(testUser);
+        verify(entityManager).remove(testUser);
+    }
+
+    @Test
+    void testFindById_Found() {
+        when(entityManager.find(User.class, 1L)).thenReturn(testUser);
+
+        User foundUser = userDAO.findById(1L);
+
+        assertNotNull(foundUser);
+        assertEquals(1L, foundUser.getId());
+    }
+
+    @Test
+    void testFindById_NotFound() {
+        when(entityManager.find(User.class, 2L)).thenReturn(null);
+
+        User foundUser = userDAO.findById(2L);
+
+        assertNull(foundUser);
+    }
+
+    @Test
+    void testFindAll() {
+        when(entityManager.createQuery("FROM User", User.class)).thenReturn(typedQuery);
+        when(typedQuery.getResultList()).thenReturn(List.of(testUser, new User()));
+
+        List<User> users = userDAO.findAll();
+
+        assertNotNull(users);
+        assertEquals(2, users.size());
     }
 }

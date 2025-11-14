@@ -1,9 +1,9 @@
 package com.company.gym.dao;
 
 import com.company.gym.entity.TrainingType;
-import com.company.gym.util.HibernateUtil;
-import org.hibernate.Session;
-import org.hibernate.query.Query;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.TypedQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -13,6 +13,9 @@ import java.util.List;
 @Repository
 public class TrainingTypeDAO extends GenericDAO<TrainingType, Long> {
     private static final Logger logger = LoggerFactory.getLogger(TrainingTypeDAO.class);
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public TrainingTypeDAO() {
         super(TrainingType.class);
@@ -24,11 +27,13 @@ public class TrainingTypeDAO extends GenericDAO<TrainingType, Long> {
     }
 
     public TrainingType findByName(String name) {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            Query<TrainingType> query = session.createQuery(
+        try {
+            TypedQuery<TrainingType> query = entityManager.createQuery(
                     "SELECT t FROM TrainingType t WHERE t.name = :name", TrainingType.class);
             query.setParameter("name", name);
-            TrainingType trainingType = query.uniqueResult();
+
+            List<TrainingType> results = query.getResultList();
+            TrainingType trainingType = results.isEmpty() ? null : results.get(0);
 
             if (trainingType == null) {
                 logger.warn("TrainingType not found with name: {}", name);
@@ -36,18 +41,20 @@ public class TrainingTypeDAO extends GenericDAO<TrainingType, Long> {
                 logger.debug("Found TrainingType with name: {}", name);
             }
             return trainingType;
+
+        } catch (Exception e) {
+            logger.error("Error finding TrainingType by name: {}", name, e);
+            return null;
         }
     }
 
     @Override
     public List<TrainingType> findAll() {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            Query<TrainingType> query = session.createQuery(
-                    "FROM TrainingType t ORDER BY t.name", TrainingType.class);
+        TypedQuery<TrainingType> query = entityManager.createQuery(
+                "FROM TrainingType t ORDER BY t.name", TrainingType.class);
 
-            List<TrainingType> types = query.getResultList();
-            logger.debug("Found {} Training Types.", types.size());
-            return types;
-        }
+        List<TrainingType> types = query.getResultList();
+        logger.debug("Found {} Training Types.", types.size());
+        return types;
     }
 }

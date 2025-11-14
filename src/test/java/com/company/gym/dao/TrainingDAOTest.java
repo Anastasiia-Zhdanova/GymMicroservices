@@ -1,49 +1,78 @@
 package com.company.gym.dao;
 
-import com.company.gym.entity.Training;
-import com.company.gym.util.HibernateUtil;
-import org.hibernate.Session;
-import org.hibernate.SessionFactory;
-import org.junit.jupiter.api.AfterEach;
+import com.company.gym.entity.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.context.annotation.Import;
+
+import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.when;
 
+@DataJpaTest
+@Import({TrainingDAO.class, TraineeDAO.class, TrainerDAO.class, UserDAO.class, TrainingTypeDAO.class})
 public class TrainingDAOTest {
 
-    @Mock
-    private Session session;
-    @Mock
-    private SessionFactory sessionFactory;
+    @Autowired
+    private TestEntityManager entityManager;
 
-    @InjectMocks
+    @Autowired
     private TrainingDAO trainingDAO;
 
-    private MockedStatic<HibernateUtil> mockedHibernateUtil;
-    private Training mockTraining;
+    private Training testTraining;
+    private Long trainingId;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-        mockTraining = new Training();
-        mockTraining.setId(1L);
+        User uTrainee = new User();
+        uTrainee.setUsername("trainee.test");
+        uTrainee.setFirstName("Trainee");
+        uTrainee.setLastName("Test");
+        uTrainee.setPassword("p");
 
-        mockedHibernateUtil = Mockito.mockStatic(HibernateUtil.class);
-        mockedHibernateUtil.when(HibernateUtil::getSessionFactory).thenReturn(sessionFactory);
-        when(sessionFactory.openSession()).thenReturn(session);
-    }
+        User uTrainer = new User();
+        uTrainer.setUsername("trainer.test");
+        uTrainer.setFirstName("Trainer");
+        uTrainer.setLastName("Test");
+        uTrainer.setPassword("p");
 
-    @AfterEach
-    void tearDown() {
-        mockedHibernateUtil.close();
+        entityManager.persist(uTrainee);
+        entityManager.persist(uTrainer);
+
+        TrainingType type = new TrainingType("Yoga");
+        entityManager.persist(type);
+
+        Trainer trainer = new Trainer();
+        trainer.setUser(uTrainer);
+        trainer.setSpecialization(type);
+        entityManager.persist(trainer);
+
+        Trainee trainee = new Trainee();
+        trainee.setUser(uTrainee);
+        entityManager.persist(trainee);
+
+        testTraining = new Training();
+        testTraining.setTrainee(trainee);
+        testTraining.setTrainer(trainer);
+        testTraining.setTrainingType(type);
+        testTraining.setTrainingName("Morning Yoga");
+        testTraining.setTrainingDate(new Date());
+        testTraining.setTrainingDuration(60);
     }
 
     @Test
-    void getEntityId_Success() {
-        Long id = trainingDAO.getEntityId(mockTraining);
-        assertEquals(1L, id);
+    void save_and_findById_Success() {
+        Training savedTraining = trainingDAO.save(testTraining);
+        trainingId = savedTraining.getId();
+
+        assertNotNull(trainingId);
+        Training foundTraining = trainingDAO.findById(trainingId);
+
+        assertNotNull(foundTraining);
+        assertEquals("Morning Yoga", foundTraining.getTrainingName());
+        assertEquals("trainee.test", foundTraining.getTrainee().getUser().getUsername());
     }
 }

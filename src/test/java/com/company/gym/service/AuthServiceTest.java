@@ -6,13 +6,14 @@ import com.company.gym.exception.ValidationException;
 import com.company.gym.util.PasswordUtil;
 import com.company.gym.util.UserCredentialGenerator;
 import com.company.gym.util.UsernameUtil;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
-import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,154 +25,215 @@ public class AuthServiceTest {
     @Mock
     private UserDAO userDAO;
 
-    @InjectMocks
+    private MeterRegistry meterRegistry;
+
     private AuthService authService;
 
-    private User mockUser;
-    private final String PLAIN_PASSWORD = "testPassword";
-    private final String HASHED_PASSWORD = "hashed";
+    private MockedStatic<PasswordUtil> passwordUtilMock;
+    private MockedStatic<UsernameUtil> usernameUtilMock;
+    private MockedStatic<UserCredentialGenerator> userCredentialGeneratorMock;
 
     @BeforeEach
     void setUp() {
-        mockUser = new User();
-        mockUser.setFirstName("John");
-        mockUser.setLastName("Doe");
-        mockUser.setUsername("john.doe");
-        mockUser.setPassword(HASHED_PASSWORD);
-        mockUser.setIsActive(true);
+        meterRegistry = new SimpleMeterRegistry();
+
+        authService = new AuthService(userDAO, meterRegistry);
+
+        passwordUtilMock = mockStatic(PasswordUtil.class);
+        usernameUtilMock = mockStatic(UsernameUtil.class);
+        userCredentialGeneratorMock = mockStatic(UserCredentialGenerator.class);
+    }
+
+    @AfterEach
+    void tearDown() {
+        passwordUtilMock.close();
+        usernameUtilMock.close();
+        userCredentialGeneratorMock.close();
     }
 
     @Test
-    void assignUniqueUsernameAndPassword_Success() {
-        try (MockedStatic<UsernameUtil> mockUsernameUtil = Mockito.mockStatic(UsernameUtil.class);
-             MockedStatic<UserCredentialGenerator> mockGenerator = Mockito.mockStatic(UserCredentialGenerator.class);
-             MockedStatic<PasswordUtil> mockPasswordUtil = Mockito.mockStatic(PasswordUtil.class)) {
+    void testAssignUniqueUsernameAndPassword_NewUser() {
+        User user = new User();
+        user.setFirstName("John");
+        user.setLastName("Doe");
+        String baseUsername = "jdoe";
+        String plainPassword = "plainPassword123";
+        String hashedPassword = "hashedPassword123";
 
-            mockUsernameUtil.when(() -> UsernameUtil.generateBaseUsername("John", "Doe")).thenReturn("john.doe");
-            when(userDAO.findByUsername("john.doe")).thenReturn(null);
-            mockGenerator.when(UserCredentialGenerator::generatePassword).thenReturn(PLAIN_PASSWORD);
-            mockPasswordUtil.when(() -> PasswordUtil.hashPassword(PLAIN_PASSWORD)).thenReturn(HASHED_PASSWORD);
+        usernameUtilMock.when(() -> UsernameUtil.generateBaseUsername("John", "Doe")).thenReturn(baseUsername);
+        userCredentialGeneratorMock.when(UserCredentialGenerator::generatePassword).thenReturn(plainPassword);
+        passwordUtilMock.when(() -> PasswordUtil.hashPassword(plainPassword)).thenReturn(hashedPassword);
 
-            String resultPassword = authService.assignUniqueUsernameAndPassword(mockUser);
+        when(userDAO.findByUsername(baseUsername)).thenReturn(null);
 
-            assertEquals(PLAIN_PASSWORD, resultPassword);
-            assertEquals("john.doe", mockUser.getUsername());
-            assertEquals(HASHED_PASSWORD, mockUser.getPassword());
-            assertTrue(mockUser.getIsActive());
-        }
+        String resultPassword = authService.assignUniqueUsernameAndPassword(user);
+
+        assertEquals(plainPassword, resultPassword);
+        assertEquals(baseUsername, user.getUsername());
+        assertEquals(hashedPassword, user.getPassword());
+        assertTrue(user.getIsActive());
+
+        assertEquals(1.0, meterRegistry.get("app.user.registration.total").counter().count());
     }
 
     @Test
-    void assignUniqueUsernameAndPassword_CollisionResolution() {
-        User existingUser = new User();
-        try (MockedStatic<UsernameUtil> mockUsernameUtil = Mockito.mockStatic(UsernameUtil.class);
-             MockedStatic<UserCredentialGenerator> mockGenerator = Mockito.mockStatic(UserCredentialGenerator.class);
-             MockedStatic<PasswordUtil> mockPasswordUtil = Mockito.mockStatic(PasswordUtil.class)) {
+    void testAssignUniqueUsernameAndPassword_UsernameCollision() {
+        User user = new User();
+        user.setFirstName("John");
+        user.setLastName("Doe");
+        String baseUsername = "jdoe";
+        String uniqueUsername = "jdoe1";
+        String plainPassword = "plainPassword123";
+        String hashedPassword = "hashedPassword123";
 
-            mockUsernameUtil.when(() -> UsernameUtil.generateBaseUsername("John", "Doe")).thenReturn("john.doe");
-            when(userDAO.findByUsername("john.doe")).thenReturn(existingUser);
-            when(userDAO.findByUsername("john.doe1")).thenReturn(existingUser);
-            when(userDAO.findByUsername("john.doe2")).thenReturn(null);
+        usernameUtilMock.when(() -> UsernameUtil.generateBaseUsername("John", "Doe")).thenReturn(baseUsername);
+        userCredentialGeneratorMock.when(UserCredentialGenerator::generatePassword).thenReturn(plainPassword);
+        passwordUtilMock.when(() -> PasswordUtil.hashPassword(plainPassword)).thenReturn(hashedPassword);
 
-            mockGenerator.when(UserCredentialGenerator::generatePassword).thenReturn(PLAIN_PASSWORD);
-            mockPasswordUtil.when(() -> PasswordUtil.hashPassword(PLAIN_PASSWORD)).thenReturn(HASHED_PASSWORD);
+        when(userDAO.findByUsername(baseUsername)).thenReturn(new User());
+        when(userDAO.findByUsername(uniqueUsername)).thenReturn(null);
 
-            authService.assignUniqueUsernameAndPassword(mockUser);
+        String resultPassword = authService.assignUniqueUsernameAndPassword(user);
 
-            assertEquals("john.doe2", mockUser.getUsername());
-            verify(userDAO, times(3)).findByUsername(anyString());
-        }
+        assertEquals(plainPassword, resultPassword);
+        assertEquals(uniqueUsername, user.getUsername());
+        assertEquals(hashedPassword, user.getPassword());
+        assertTrue(user.getIsActive());
+
+        verify(userDAO).findByUsername(baseUsername);
+        verify(userDAO).findByUsername(uniqueUsername);
+
+        assertEquals(1.0, meterRegistry.get("app.user.registration.total").counter().count());
     }
 
     @Test
-    void assignUniqueUsernameAndPassword_UsernameUtilException() {
-        try (MockedStatic<UsernameUtil> mockUsernameUtil = Mockito.mockStatic(UsernameUtil.class)) {
+    void testAssignUniqueUsernameAndPassword_UsernameGenerationFails() {
+        User user = new User();
+        user.setFirstName("Invalid-");
+        user.setLastName("User-");
 
-            mockUsernameUtil.when(() -> UsernameUtil.generateBaseUsername(anyString(), anyString())).thenThrow(new IllegalArgumentException("Error"));
+        usernameUtilMock.when(() -> UsernameUtil.generateBaseUsername("Invalid-", "User-"))
+                .thenThrow(new IllegalArgumentException("Invalid characters"));
 
-            authService.assignUniqueUsernameAndPassword(mockUser);
+        userCredentialGeneratorMock.when(UserCredentialGenerator::generatePassword).thenReturn("pass");
+        passwordUtilMock.when(() -> PasswordUtil.hashPassword("pass")).thenReturn("hash");
 
-            assertEquals("", mockUser.getUsername());
-        }
+        when(userDAO.findByUsername("")).thenReturn(null);
+
+        String resultPassword = authService.assignUniqueUsernameAndPassword(user);
+
+        assertEquals("pass", resultPassword);
+        assertEquals("", user.getUsername());
+        assertEquals("hash", user.getPassword());
+        assertTrue(user.getIsActive());
+        assertEquals(1.0, meterRegistry.get("app.user.registration.total").counter().count());
     }
 
     @Test
-    void isUsernameTaken_True() {
-        when(userDAO.findByUsername("exists")).thenReturn(mockUser);
-        assertTrue(authService.isUsernameTaken("exists"));
+    void testIsUsernameTaken_True() {
+        when(userDAO.findByUsername("takenUser")).thenReturn(new User());
+
+        assertTrue(authService.isUsernameTaken("takenUser"));
     }
 
     @Test
-    void isUsernameTaken_False() {
-        when(userDAO.findByUsername("new")).thenReturn(null);
-        assertFalse(authService.isUsernameTaken("new"));
+    void testIsUsernameTaken_False() {
+        when(userDAO.findByUsername("freeUser")).thenReturn(null);
+
+        assertFalse(authService.isUsernameTaken("freeUser"));
     }
 
     @Test
-    void authenticateUser_Success() {
-        try (MockedStatic<PasswordUtil> mockPasswordUtil = Mockito.mockStatic(PasswordUtil.class)) {
-            when(userDAO.findByUsername("john.doe")).thenReturn(mockUser);
-            mockPasswordUtil.when(() -> PasswordUtil.checkPassword(PLAIN_PASSWORD, HASHED_PASSWORD)).thenReturn(true);
+    void testAuthenticateUser_Success() {
+        User user = new User();
+        user.setIsActive(true);
+        user.setPassword("hashedPassword");
 
-            assertTrue(authService.authenticateUser("john.doe", PLAIN_PASSWORD));
-        }
+        when(userDAO.findByUsername("user")).thenReturn(user);
+        passwordUtilMock.when(() -> PasswordUtil.checkPassword("plainPassword", "hashedPassword")).thenReturn(true);
+
+        assertTrue(authService.authenticateUser("user", "plainPassword"));
     }
 
     @Test
-    void authenticateUser_UserNotFound_Failure() {
-        when(userDAO.findByUsername("notfound")).thenReturn(null);
+    void testAuthenticateUser_UserNotFound() {
+        when(userDAO.findByUsername("unknownUser")).thenReturn(null);
 
-        assertFalse(authService.authenticateUser("notfound", PLAIN_PASSWORD));
+        assertFalse(authService.authenticateUser("unknownUser", "password"));
     }
 
     @Test
-    void authenticateUser_IncorrectPassword_Failure() {
-        try (MockedStatic<PasswordUtil> mockPasswordUtil = Mockito.mockStatic(PasswordUtil.class)) {
-            when(userDAO.findByUsername("john.doe")).thenReturn(mockUser);
-            mockPasswordUtil.when(() -> PasswordUtil.checkPassword(PLAIN_PASSWORD, HASHED_PASSWORD)).thenReturn(false);
+    void testAuthenticateUser_UserDeactivated() {
+        User user = new User();
+        user.setIsActive(false);
+        user.setPassword("hashedPassword");
 
-            assertFalse(authService.authenticateUser("john.doe", PLAIN_PASSWORD));
-        }
+        when(userDAO.findByUsername("inactiveUser")).thenReturn(user);
+
+        assertFalse(authService.authenticateUser("inactiveUser", "password"));
+        passwordUtilMock.verifyNoInteractions();
     }
 
     @Test
-    void authenticateUser_DeactivatedUser_Failure() {
-        mockUser.setIsActive(false);
-        when(userDAO.findByUsername("john.doe")).thenReturn(mockUser);
+    void testAuthenticateUser_InvalidPassword() {
+        User user = new User();
+        user.setIsActive(true);
+        user.setPassword("hashedPassword");
 
-        assertFalse(authService.authenticateUser("john.doe", PLAIN_PASSWORD));
+        when(userDAO.findByUsername("user")).thenReturn(user);
+        passwordUtilMock.when(() -> PasswordUtil.checkPassword("wrongPassword", "hashedPassword")).thenReturn(false);
+
+        assertFalse(authService.authenticateUser("user", "wrongPassword"));
     }
 
     @Test
-    void changePassword_Success() {
-        try (MockedStatic<PasswordUtil> mockPasswordUtil = Mockito.mockStatic(PasswordUtil.class)) {
-            when(userDAO.findByUsername("john.doe")).thenReturn(mockUser);
-            mockPasswordUtil.when(() -> PasswordUtil.checkPassword("oldPass", HASHED_PASSWORD)).thenReturn(true);
-            mockPasswordUtil.when(() -> PasswordUtil.hashPassword("newPass")).thenReturn("newHashed");
+    void testChangePassword_Success() {
+        User user = new User();
+        user.setUsername("user");
+        user.setPassword("oldHashed");
 
-            authService.changePassword("john.doe", "oldPass", "newPass");
+        String oldPlain = "oldPassword";
+        String newPlain = "newPassword";
+        String newHashed = "newHashed";
 
-            assertEquals("newHashed", mockUser.getPassword());
-            verify(userDAO).update(mockUser);
-        }
+        when(userDAO.findByUsername("user")).thenReturn(user);
+        passwordUtilMock.when(() -> PasswordUtil.checkPassword(oldPlain, "oldHashed")).thenReturn(true);
+        passwordUtilMock.when(() -> PasswordUtil.hashPassword(newPlain)).thenReturn(newHashed);
+
+        assertDoesNotThrow(() -> authService.changePassword("user", oldPlain, newPlain));
+
+        assertEquals(newHashed, user.getPassword());
+        verify(userDAO).update(user);
     }
 
     @Test
-    void changePassword_UserNotFound_ThrowsException() {
-        when(userDAO.findByUsername("notfound")).thenReturn(null);
+    void testChangePassword_UserNotFound() {
+        when(userDAO.findByUsername("unknownUser")).thenReturn(null);
 
-        assertThrows(ValidationException.class, () -> authService.changePassword("notfound", "oldPass", "newPass"));
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
+            authService.changePassword("unknownUser", "old", "new");
+        });
+
+        assertEquals("User profile not found for password change: unknownUser", exception.getMessage());
         verify(userDAO, never()).update(any(User.class));
     }
 
     @Test
-    void changePassword_IncorrectOldPassword_ThrowsException() {
-        try (MockedStatic<PasswordUtil> mockPasswordUtil = Mockito.mockStatic(PasswordUtil.class)) {
-            when(userDAO.findByUsername("john.doe")).thenReturn(mockUser);
-            mockPasswordUtil.when(() -> PasswordUtil.checkPassword("wrongOldPass", HASHED_PASSWORD)).thenReturn(false);
+    void testChangePassword_IncorrectOldPassword() {
+        User user = new User();
+        user.setUsername("user");
+        user.setPassword("oldHashed");
 
-            assertThrows(ValidationException.class, () -> authService.changePassword("john.doe", "wrongOldPass", "newPass"));
-            verify(userDAO, never()).update(any(User.class));
-        }
+        String wrongOldPlain = "wrongOldPassword";
+
+        when(userDAO.findByUsername("user")).thenReturn(user);
+        passwordUtilMock.when(() -> PasswordUtil.checkPassword(wrongOldPlain, "oldHashed")).thenReturn(false);
+
+        ValidationException exception = assertThrows(ValidationException.class, () -> {
+            authService.changePassword("user", wrongOldPlain, "new");
+        });
+
+        assertEquals("Incorrect old password for User: user", exception.getMessage());
+        verify(userDAO, never()).update(any(User.class));
     }
 }
