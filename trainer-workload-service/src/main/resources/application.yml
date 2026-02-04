@@ -1,0 +1,22 @@
+server:
+  port: 8081 # Порт отличается от основного сервиса (8080)
+
+spring:
+  application:
+    name: trainer-workload-service
+  data:
+    mongodb:
+      #host: localhost
+      #port: 27017
+      database: gym_workload_db
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+de:
+  flapdoodle:
+    mongodb:
+      embedded:
+        version: 6.0.9
