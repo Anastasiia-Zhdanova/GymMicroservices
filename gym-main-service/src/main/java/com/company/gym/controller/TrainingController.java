@@ -26,7 +26,7 @@ public class TrainingController {
     // №14 Add Training - POST /api/v1/trainings
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary= "14. Add Training", description = "Требуется аутентификация. Non-Idempotent. Аутентифицированный пользователь должен быть Trainee или Trainer из запроса.")
+    @Operation(summary= "14. Add Training", description = "Authentication required. Non-Idempotent. Authenticated user must be the Trainee or Trainer in the request.")
     public ResponseEntity<Void> createTraining(
             @Valid @RequestBody TrainingRequest request,
             @AuthenticationPrincipal UserDetails principal // Logged-in username from Redis Session
@@ -50,5 +50,13 @@ public class TrainingController {
         );
 
         return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    // №15 DELETE Training
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Delete training by ID")
+    public ResponseEntity<Void> deleteTraining(@PathVariable Long id) {
+        trainingService.deleteTraining(id);
+        return ResponseEntity.noContent().build();
     }
 }

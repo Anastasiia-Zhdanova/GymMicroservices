@@ -5,7 +5,7 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-// name = имя сервиса в Eureka (как в application.yml нового сервиса)
+// name = name of service in Eureka (in application.yml )
 @FeignClient(name = "trainer-workload-service")
 public interface WorkloadClient {
 

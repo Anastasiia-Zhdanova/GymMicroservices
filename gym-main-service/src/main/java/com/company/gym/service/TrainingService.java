@@ -99,4 +99,24 @@ public class TrainingService {
     public void fallbackWorkload(TrainerWorkloadRequest request, Throwable t) {
         logger.error("Failed to update workload service. Service unavailable. Reason: {}", t.getMessage());
     }
+
+
+    @Transactional
+    public void deleteTraining(Long trainingId) {
+        Training training = trainingDAO.findById(trainingId);
+        if (training != null) {
+            TrainerWorkloadRequest workloadRequest = TrainerWorkloadRequest.builder()
+                    .trainerUsername(training.getTrainer().getUser().getUsername())
+                    .trainerFirstName(training.getTrainer().getUser().getFirstName())
+                    .trainerLastName(training.getTrainer().getUser().getLastName())
+                    .isActive(training.getTrainer().getUser().getIsActive())
+                    .trainingDate(training.getTrainingDate())
+                    .trainingDuration(training.getTrainingDuration())
+                    .actionType(TrainerWorkloadRequest.ActionType.DELETE)
+                    .build();
+
+            trainingDAO.delete(training);
+            callWorkloadService(workloadRequest);
+        }
+    }
 }
